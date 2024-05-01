@@ -1,4 +1,4 @@
-# Recursos para fila do SQS
+# Criação da fila SQS
 resource "aws_sqs_queue" "queue_for_events" {
   name = "queue-for-events"
 
@@ -23,7 +23,19 @@ resource "aws_sqs_queue" "queue_for_events" {
   })
 }
 
-# Recurso para o bucket S3
+# Criação do DynamoDB
+resource "aws_dynamodb_table" "file_counts" {
+  name         = var.dynamodb_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "FileType"
+
+  attribute {
+    name = "FileType"
+    type = "S"
+  }
+}
+
+# Criação do bucket de processamento
 resource "aws_s3_bucket" "data_for_processing" {
   bucket = var.s3_bucket_data_name
 }
@@ -51,52 +63,7 @@ resource "aws_s3_bucket_notification" "bucket_notification" {
   }
 }
 
-# Recurso para a tabela DynamoDB
-resource "aws_dynamodb_table" "file_counts" {
-  name         = var.dynamodb_table_name
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "FileType"
-
-  attribute {
-    name = "FileType"
-    type = "S"
-  }
-}
-
-resource "aws_lambda_function" "lbda_processing_sqs" {
-  function_name = var.lambda_processing_name
-  handler       = "lbda-processing-sqs.lambda_handler"
-  role          = aws_iam_role.lbda_processing_sqs_role.arn
-  runtime       = "python3.12"
-
-  filename         = "${path.module}/lambda_function/lbda-processing-sqs.zip"
-  source_code_hash = filebase64sha256("${path.module}/lambda_function/lbda-processing-sqs.zip")
-}
-
-resource "aws_lambda_permission" "allow_sqs_to_call_lbda_processing_sqs" {
-  statement_id  = "AllowExecutionFromSQS"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.lbda_processing_sqs.function_name
-  principal     = "sqs.amazonaws.com"
-  source_arn    = aws_sqs_queue.queue_for_events.arn
-}
-
-resource "aws_lambda_event_source_mapping" "sqs_to_lambda" {
-  event_source_arn = aws_sqs_queue.queue_for_events.arn
-  function_name    = aws_lambda_function.lbda_processing_sqs.arn
-}
-
-resource "aws_lambda_function" "lbda_metrics" {
-  function_name = var.lambda_metrics_name
-  handler       = "lbda-metrics.lambda_handler"
-  role          = aws_iam_role.lbda_metrics_role.arn
-  runtime       = "python3.12"
-
-  filename         = "${path.module}/lambda_function/lbda-metrics.zip"
-  source_code_hash = filebase64sha256("${path.module}/lambda_function/lbda-metrics.zip")
-}
-
-# Configuração do bucket S3 estático
+# Criação do bucket que servirá as métricas
 resource "aws_s3_bucket" "static_site" {
   bucket = var.s3_bucket_static_name
 }
@@ -148,6 +115,41 @@ resource "aws_s3_bucket_website_configuration" "static_site" {
   index_document {
     suffix = "index.html"
   }
+}
+
+# Criação da função lambda de processamento
+resource "aws_lambda_function" "lbda_processing_sqs" {
+  function_name = var.lambda_processing_name
+  handler       = "lbda-processing-sqs.lambda_handler"
+  role          = aws_iam_role.lbda_processing_sqs_role.arn
+  runtime       = "python3.12"
+
+  filename         = "${path.module}/lambda_function/lbda-processing-sqs.zip"
+  source_code_hash = filebase64sha256("${path.module}/lambda_function/lbda-processing-sqs.zip")
+}
+
+resource "aws_lambda_permission" "allow_sqs_to_call_lbda_processing_sqs" {
+  statement_id  = "AllowExecutionFromSQS"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.lbda_processing_sqs.function_name
+  principal     = "sqs.amazonaws.com"
+  source_arn    = aws_sqs_queue.queue_for_events.arn
+}
+
+resource "aws_lambda_event_source_mapping" "sqs_to_lambda" {
+  event_source_arn = aws_sqs_queue.queue_for_events.arn
+  function_name    = aws_lambda_function.lbda_processing_sqs.arn
+}
+
+# Criação da função lambda de geração de métricas
+resource "aws_lambda_function" "lbda_metrics" {
+  function_name = var.lambda_metrics_name
+  handler       = "lbda-metrics.lambda_handler"
+  role          = aws_iam_role.lbda_metrics_role.arn
+  runtime       = "python3.12"
+
+  filename         = "${path.module}/lambda_function/lbda-metrics.zip"
+  source_code_hash = filebase64sha256("${path.module}/lambda_function/lbda-metrics.zip")
 }
 
 # Regra EventBridge para disparar a função Lambda de métricas

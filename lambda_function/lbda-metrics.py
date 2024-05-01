@@ -1,17 +1,14 @@
 import json
 import boto3
 
-# Inicialize os clientes para DynamoDB, CloudWatch e S3
 dynamodb = boto3.resource('dynamodb')
 cloudwatch = boto3.client('cloudwatch')
 s3 = boto3.client('s3')
 
-# Defina o nome do bucket S3 e o arquivo da página estática
 bucket_name = 'number-of-files-per-type-aragao-desafio'
 static_page_key = 'index.html'
 
 def lambda_handler(event, context):
-    # Nome da sua tabela DynamoDB
     table = dynamodb.Table('FileCounts')
 
     # Consulta o DynamoDB para obter as contagens de arquivos por tipo
